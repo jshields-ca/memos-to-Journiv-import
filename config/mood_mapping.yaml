@@ -1,68 +1,34 @@
 # Memos hashtag → Journiv mood mapping
 #
-# Keys are hashtag names from Memos (without the # symbol, lowercase).
-# Values are mood names exactly as they appear in Journiv Settings → Moods.
+# This config is tuned for the actual hashtag conventions in this Memos export.
+# The mood tags use a "mood-" prefix (e.g. #mood-rad, #mood-good) which maps
+# directly to Journiv's default mood names.
 #
-# How this works:
-#   - If a memo has #happy in its content, the Journiv entry gets mood "Great"
-#   - If a memo has multiple mapped hashtags, the first one wins
-#   - Unmapped hashtags become Journiv tags (not moods)
-#   - If a memo has no mapped hashtags, mood is left unset
+# Keys: hashtag name WITHOUT the # (lowercase)
+# Values: mood name EXACTLY as it appears in Journiv Settings → Moods
 #
-# IMPORTANT: The mood names (values) must exactly match mood names you've
-# created in your Journiv instance. Journiv ships with default moods —
-# check Settings → Moods in your Journiv UI and update this file to match.
-#
-# Journiv's default moods are typically: Rad, Good, Meh, Bad, Awful
-# Adjust the values below to match your setup.
+# If you've customised mood names in Journiv, update the values on the right
+# to match what's in your Journiv instance.
 
 mood_map:
-  # Positive
-  happy: "Rad"
-  great: "Rad"
-  amazing: "Rad"
-  excellent: "Rad"
-  excited: "Rad"
-  fantastic: "Rad"
-  joy: "Rad"
+  mood-rad: "Rad"
+  mood-good: "Good"
+  mood-meh: "Meh"
+  mood-bad: "Bad"
+  mood-awful: "Awful"
 
-  # Good
-  good: "Good"
-  fine: "Good"
-  content: "Good"
-  pleased: "Good"
-  grateful: "Good"
-  thankful: "Good"
+# Tags that will be silently dropped — never carried over as Journiv tags.
+# "daylio-import" is a provenance marker from the original Daylio migration
+# and has no meaning in Journiv.
+exclude_tags:
+  - daylio-import
+  - tldr
 
-  # Neutral
-  meh: "Meh"
-  okay: "Meh"
-  ok: "Meh"
-  neutral: "Meh"
-  tired: "Meh"
-  blah: "Meh"
-
-  # Bad
-  bad: "Bad"
-  sad: "Bad"
-  anxious: "Bad"
-  stressed: "Bad"
-  worried: "Bad"
-  upset: "Bad"
-  frustrated: "Bad"
-  angry: "Bad"
-
-  # Awful
-  awful: "Awful"
-  terrible: "Awful"
-  depressed: "Awful"
-  miserable: "Awful"
-  horrible: "Awful"
-
-# When true, hashtags that matched a mood are removed from the entry body.
-# The mood is set on the entry, so the hashtag is redundant in the text.
+# Hashtags that matched a mood entry are stripped from the entry body.
+# The mood is recorded on the entry itself, so the tag is redundant in text.
 strip_mood_hashtags_from_content: true
 
-# When true, ALL hashtags (including unmapped ones) are stripped from the
-# entry body. Unmapped ones still become Journiv tags.
+# Strip ALL hashtags from entry bodies (including tags that become Journiv tags).
+# Journiv shows tags separately from content, so this is a matter of preference.
+# Defaults to false — tags remain visible in the entry text.
 strip_all_hashtags_from_content: false

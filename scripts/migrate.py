@@ -24,9 +24,6 @@ Usage:
 
     # Custom mood mapping config
     python3 scripts/migrate.py --input memos_export.json --config config/mood_mapping.yaml
-
-    # After running inspect_journiv_export.py, adapt the schema if needed:
-    python3 scripts/migrate.py --input memos_export.json --schema journiv_entry_schema.json
 """
 
 import argparse
@@ -47,7 +44,7 @@ from lib.memos_reader import load_from_file, load_from_api
 from lib.quill_delta import md_to_quill_delta
 
 
-# ── Hashtag extraction ────────────────────────────────────────────────────────
+# ── Hashtag extraction & content cleaning ─────────────────────────────────────
 
 HASHTAG_RE = re.compile(r"(?<!\w)#([\w/-]+)")
 
@@ -57,20 +54,53 @@ def extract_hashtags(content: str) -> list[str]:
     return [m.group(1).lower() for m in HASHTAG_RE.finditer(content)]
 
 
-def _collapse_spaces(text: str) -> str:
-    """Collapse multiple spaces into one and clean up trailing spaces on lines."""
-    return re.sub(r"[ \t]{2,}", " ", text).strip()
+def _clean_content(text: str) -> str:
+    """
+    Normalise whitespace after hashtag removal:
+    - Collapse multiple spaces/tabs on a line to one space
+    - Collapse 3+ consecutive blank lines to two (one visual paragraph break)
+    - Strip leading/trailing whitespace from the whole string
+    """
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def strip_hashtag(content: str, tag: str) -> str:
-    """Remove a specific #tag from content and clean up extra whitespace."""
+    """Remove a specific #tag and any tag-only line it leaves behind."""
     cleaned = re.sub(rf"(?<!\w)#{re.escape(tag)}\b", "", content)
-    return _collapse_spaces(cleaned)
+    # Drop any line that became nothing but whitespace after stripping
+    lines = [ln for ln in cleaned.splitlines() if ln.strip()]
+    return _clean_content("\n".join(lines))
+
+
+def strip_tags_from_content(content: str, tags_to_strip: list[str]) -> str:
+    """Remove a list of specific #tags from content in one pass."""
+    pattern = "|".join(rf"(?<!\w)#{re.escape(t)}\b" for t in tags_to_strip)
+    cleaned = re.sub(pattern, "", content)
+    # Drop lines that became nothing but whitespace
+    lines = [ln for ln in cleaned.splitlines() if ln.strip()]
+    return _clean_content("\n".join(lines))
 
 
 def strip_all_hashtags(content: str) -> str:
-    """Remove all #hashtags from content and clean up extra whitespace."""
-    return _collapse_spaces(HASHTAG_RE.sub("", content))
+    """Remove all #hashtags from content and clean up whitespace."""
+    cleaned = HASHTAG_RE.sub("", content)
+    lines = [ln for ln in cleaned.splitlines() if ln.strip()]
+    return _clean_content("\n".join(lines))
+
+
+def extract_title(content: str) -> tuple[str | None, str]:
+    """
+    If the content starts with a Markdown H1 heading, extract it as a title
+    and return (title, remaining_content). Otherwise return (None, content).
+    """
+    match = re.match(r"^#\s+(.+?)(?:\n|$)", content.lstrip())
+    if match:
+        title = match.group(1).strip()
+        rest = content[match.end():].strip()
+        return title, rest
+    return None, content
 
 
 # ── Config loading ────────────────────────────────────────────────────────────
@@ -79,8 +109,10 @@ def load_config(config_path: str) -> dict:
     with open(config_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     mood_map = {k.lower(): v for k, v in cfg.get("mood_map", {}).items()}
+    exclude_tags = {t.lower() for t in cfg.get("exclude_tags", [])}
     return {
         "mood_map": mood_map,
+        "exclude_tags": exclude_tags,
         "strip_mood_hashtags": cfg.get("strip_mood_hashtags_from_content", True),
         "strip_all_hashtags": cfg.get("strip_all_hashtags_from_content", False),
     }
@@ -92,7 +124,6 @@ def parse_timestamp(ts: str | None) -> str:
     """Normalise a Memos timestamp to ISO 8601 UTC string."""
     if not ts:
         return datetime.now(timezone.utc).isoformat()
-    # Already ISO 8601 — just ensure UTC marker is present
     try:
         dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         return dt.isoformat()
@@ -100,44 +131,67 @@ def parse_timestamp(ts: str | None) -> str:
         return ts
 
 
-def transform_memo(memo: dict, cfg: dict) -> dict:
+def transform_memo(memo: dict, cfg: dict) -> tuple[dict, list[str]]:
     """
     Convert a single Memos memo dict into a Journiv entry dict.
+
+    Returns (entry_dict, warnings) where warnings is a list of strings
+    describing anything that couldn't be fully migrated (e.g. attachments).
 
     The output shape targets Journiv's native export/import format.
     After running inspect_journiv_export.py, verify these field names
     match your Journiv instance and adjust if needed.
     """
+    warnings: list[str] = []
     content = memo.get("content", "")
     hashtags = extract_hashtags(content)
     mood_map: dict[str, str] = cfg["mood_map"]
+    exclude_tags: set[str] = cfg["exclude_tags"]
+
+    # Warn about attachments — these are not migrated (text-only)
+    attachments = memo.get("attachments", [])
+    if attachments:
+        names = [a.get("filename", a.get("name", "?")) for a in attachments]
+        warnings.append(
+            f"Entry from {memo.get('createTime','?')[:10]} has {len(attachments)} "
+            f"attachment(s) not migrated: {', '.join(names)}"
+        )
 
     # Determine mood: first hashtag that matches the mood map wins
     mood: str | None = None
     matched_mood_tag: str | None = None
     for tag in hashtags:
-        base_tag = tag.split("/")[0]  # handle memos/subtag style
-        if base_tag in mood_map:
-            mood = mood_map[base_tag]
+        if tag in mood_map:
+            mood = mood_map[tag]
             matched_mood_tag = tag
             break
 
-    # Build tag list: hashtags that didn't map to a mood
-    tags = [t for t in hashtags if t != matched_mood_tag]
-    # Use only the top-level part of hierarchical tags (e.g. "work/project" → "work/project")
+    # Build tag list: keep tags that aren't mood tags and aren't in exclude_tags
+    tags = [
+        t for t in hashtags
+        if t != matched_mood_tag and t not in exclude_tags and t not in mood_map
+    ]
     tags = list(dict.fromkeys(tags))  # deduplicate while preserving order
 
-    # Optionally strip hashtags from content
+    # Clean content: decide which hashtags to strip from the body
     working_content = content
     if cfg["strip_all_hashtags"]:
         working_content = strip_all_hashtags(working_content)
-    elif cfg["strip_mood_hashtags"] and matched_mood_tag:
-        working_content = strip_hashtag(working_content, matched_mood_tag)
+    else:
+        # Always strip mood hashtag and excluded tags; optionally all mood hashtags
+        tags_to_strip = list(exclude_tags)
+        if cfg["strip_mood_hashtags"] and matched_mood_tag:
+            tags_to_strip.append(matched_mood_tag)
+        if tags_to_strip:
+            working_content = strip_tags_from_content(working_content, tags_to_strip)
 
-    # Convert Markdown → Quill Delta
-    quill_content = md_to_quill_delta(working_content)
+    # Extract H1 title if present (native Memos entries often start with "# Title")
+    title, body_content = extract_title(working_content)
 
-    entry = {
+    # Convert Markdown body → Quill Delta
+    quill_content = md_to_quill_delta(body_content if title else working_content)
+
+    entry: dict = {
         "uuid": str(uuid.uuid4()),
         "date": parse_timestamp(memo.get("createTime") or memo.get("create_time")),
         "updated_at": parse_timestamp(memo.get("updateTime") or memo.get("update_time")),
@@ -146,10 +200,12 @@ def transform_memo(memo: dict, cfg: dict) -> dict:
         "starred": bool(memo.get("pinned", False)),
     }
 
+    if title:
+        entry["title"] = title
     if mood:
         entry["mood"] = mood
 
-    return entry
+    return entry, warnings
 
 
 # ── ZIP assembly ──────────────────────────────────────────────────────────────
@@ -174,10 +230,11 @@ def build_import_zip(entries: list[dict], output_path: str) -> None:
 
 # ── Dry-run report ────────────────────────────────────────────────────────────
 
-def print_dry_run_report(entries: list[dict], cfg: dict) -> None:
+def print_dry_run_report(entries: list[dict], all_warnings: list[str]) -> None:
     mood_counts: dict[str, int] = {}
     no_mood = 0
     tag_set: set[str] = set()
+    titled = 0
 
     for e in entries:
         m = e.get("mood")
@@ -186,33 +243,45 @@ def print_dry_run_report(entries: list[dict], cfg: dict) -> None:
         else:
             no_mood += 1
         tag_set.update(e.get("tags", []))
+        if e.get("title"):
+            titled += 1
 
     print(f"\n{'─' * 60}")
     print(f"  DRY RUN — no files written")
     print(f"{'─' * 60}")
     print(f"  Total entries to migrate:  {len(entries)}")
+    print(f"  Entries with a title:      {titled}")
+
     print(f"\n  Mood distribution:")
     for mood, count in sorted(mood_counts.items(), key=lambda x: -x[1]):
         print(f"    {mood:<20} {count}")
-    print(f"    {'(no mood)':<20} {no_mood}")
-    print(f"\n  Unique tags found:  {len(tag_set)}")
-    if tag_set:
-        for t in sorted(tag_set)[:20]:
-            print(f"    #{t}")
-        if len(tag_set) > 20:
-            print(f"    ... and {len(tag_set) - 20} more")
+    if no_mood:
+        print(f"    {'(no mood)':<20} {no_mood}")
+
+    print(f"\n  Unique tags (excl. mood/excluded):  {len(tag_set)}")
+    for t in sorted(tag_set):
+        print(f"    #{t}")
+
+    if all_warnings:
+        print(f"\n  ⚠  Warnings ({len(all_warnings)}):")
+        for w in all_warnings:
+            print(f"    • {w}")
+
     print(f"\n  First 3 entries (preview):")
     for e in entries[:3]:
         date = e["date"][:10]
         mood = e.get("mood", "(none)")
+        title = e.get("title", "")
         tags = ", ".join(f"#{t}" for t in e.get("tags", [])) or "(none)"
-        # Show first 80 chars of plain text from Quill ops
         text = "".join(
             op["insert"] for op in e["content"]["ops"]
             if isinstance(op.get("insert"), str)
-        )[:80].replace("\n", " ").strip()
+        )[:100].replace("\n", " ").strip()
         print(f"\n    [{date}] mood={mood}  tags={tags}")
+        if title:
+            print(f"    title={title!r}")
         print(f"    {text!r}")
+
     print(f"\n{'─' * 60}")
     print("  Run without --dry-run to produce the import ZIP.")
 
@@ -250,7 +319,7 @@ def main():
         print("Expected: config/mood_mapping.yaml (run from repo root)")
         sys.exit(1)
     cfg = load_config(str(config_path))
-    print(f"Loaded mood mapping: {len(cfg['mood_map'])} hashtag rules from {config_path}")
+    print(f"Loaded {len(cfg['mood_map'])} mood rules, {len(cfg['exclude_tags'])} excluded tags")
 
     # Load memos
     if args.input:
@@ -282,13 +351,25 @@ def main():
             print(f"Skipped {skipped} archived memos (use --include-archived to include them)")
 
     # Transform
-    entries = [transform_memo(m, cfg) for m in raw_memos]
+    all_warnings: list[str] = []
+    entries: list[dict] = []
+    for memo in raw_memos:
+        entry, warnings = transform_memo(memo, cfg)
+        entries.append(entry)
+        all_warnings.extend(warnings)
+
     # Sort chronologically
     entries.sort(key=lambda e: e["date"])
 
     if args.dry_run:
-        print_dry_run_report(entries, cfg)
+        print_dry_run_report(entries, all_warnings)
         return
+
+    # Print warnings even on full run
+    if all_warnings:
+        print(f"\n⚠  {len(all_warnings)} warning(s):")
+        for w in all_warnings:
+            print(f"  • {w}")
 
     # Build ZIP
     output = args.output
@@ -299,9 +380,9 @@ def main():
     print("  1. Open Journiv → Settings → Import")
     print("  2. Select the ZIP file above")
     print("  3. Verify entry count and spot-check a few entries")
-    print("  4. If the import looks wrong, check journiv_entry_schema.json")
-    print("     (from scripts/inspect_journiv_export.py) and adjust the schema")
-    print("     in transform_memo() to match your Journiv instance's format.")
+    print("  4. If the import looks wrong, inspect a Journiv export ZIP:")
+    print("     python3 scripts/inspect_journiv_export.py journiv_sample_export.zip")
+    print("     Then compare the schema to transform_memo() and adjust field names.")
 
 
 if __name__ == "__main__":
