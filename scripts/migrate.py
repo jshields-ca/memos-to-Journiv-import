@@ -275,9 +275,13 @@ def transform_memo(
     # ── Timestamps ──
     create_dt = parse_utc_ts(memo.get("createTime") or memo.get("create_time"))
     update_dt = parse_utc_ts(memo.get("updateTime") or memo.get("update_time"))
-    create_ts = to_journiv_ts(create_dt)
+    # When updateTime is earlier than createTime the entry date was manually
+    # backdated in Memos (e.g. Daylio imports where createTime is the import
+    # date and updateTime was edited to the original journal date).
+    journal_dt = update_dt if update_dt < create_dt else create_dt
+    journal_ts = to_journiv_ts(journal_dt)
     update_ts = to_journiv_ts(update_dt)
-    local_date_str = local_date(create_dt, tz_name)
+    local_date_str = local_date(journal_dt, tz_name)
 
     # ── mood_activity array ──
     # Journiv stores mood and activities together in this array, mood first.
@@ -301,7 +305,7 @@ def transform_memo(
     entry_id = str(uuid.uuid4())
 
     moment = {
-        "logged_at_utc": create_ts,
+        "logged_at_utc": journal_ts,
         "logged_date_tz": local_date_str,
         "logged_timezone": tz_name,
         "note": None,
@@ -326,11 +330,11 @@ def transform_memo(
             "is_draft": False,
             "import_metadata": None,
             "journal_external_id": journal_id,
-            "created_at": create_ts,
+            "created_at": journal_ts,
             "updated_at": update_ts,
             "external_id": entry_id,
         },
-        "created_at": create_ts,
+        "created_at": journal_ts,
         "updated_at": update_ts,
         "external_id": moment_id,
     }
