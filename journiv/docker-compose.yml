@@ -1,0 +1,161 @@
+# Journiv — SQLite deployment for single-user self-hosted use.
+#
+# Setup:
+#   1. Copy .env.example to .env and fill in the required values
+#   2. docker compose up -d
+#
+# Required: SECRET_KEY and DOMAIN_NAME must be set in .env before starting.
+# See .env.example for instructions.
+
+x-common-valkey-env: &common-valkey-env
+  REDIS_URL: redis://valkey:6379/0
+  CELERY_BROKER_URL: redis://valkey:6379/0
+  CELERY_RESULT_BACKEND: redis://valkey:6379/0
+
+x-celery-common: &celery-common
+  image: swalabtech/journiv-app:${APP_VERSION:-latest}
+  env_file: .env
+  volumes:
+    - ./data:/data
+  environment:
+    DB_DRIVER: sqlite
+    DATABASE_URL: sqlite:////data/journiv.db
+  depends_on:
+    valkey:
+      condition: service_healthy
+  networks:
+    - backend
+  restart: unless-stopped
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "50m"
+      max-file: "5"
+  deploy:
+    resources:
+      limits:
+        cpus: "1.0"
+        memory: 1g
+      reservations:
+        memory: 256m
+
+x-app-common: &app-common
+  image: swalabtech/journiv-app:${APP_VERSION:-latest}
+  env_file: .env
+  volumes:
+    - ./data:/data
+  environment:
+    DB_DRIVER: sqlite
+    DATABASE_URL: sqlite:////data/journiv.db
+  depends_on:
+    valkey:
+      condition: service_healthy
+  networks:
+    - backend
+  restart: unless-stopped
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "50m"
+      max-file: "5"
+
+x-celery-healthcheck: &celery-healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 5
+  start_period: 40s
+
+services:
+  valkey:
+    image: valkey/valkey:9.0-alpine
+    container_name: journiv-valkey-cache
+    restart: unless-stopped
+    volumes:
+      - ./data/valkey:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  celery-worker:
+    <<: *celery-common
+    container_name: journiv-celery-worker
+    command: >
+      celery -A app.core.celery_app worker
+      --loglevel=info
+      --concurrency=${CELERY_WORKER_CONCURRENCY:-1}
+      --max-memory-per-child=${CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB:-300000}
+      --max-tasks-per-child=${CELERY_WORKER_MAX_TASKS_PER_CHILD:-200}
+    environment:
+      <<: *common-valkey-env
+      SERVICE_ROLE: celery-worker
+      ENVIRONMENT: production
+    healthcheck:
+      <<: *celery-healthcheck
+
+  celery-beat:
+    <<: *celery-common
+    container_name: journiv-celery-beat
+    command: celery -A app.core.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler --pidfile=/tmp/celerybeat.pid
+    environment:
+      <<: *common-valkey-env
+      SERVICE_ROLE: celery-beat
+      ENVIRONMENT: production
+      REDBEAT_REDIS_URL: redis://valkey:6379/2
+    healthcheck:
+      <<: *celery-healthcheck
+
+  app:
+    <<: *app-common
+    container_name: journiv-sqlite-app
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      <<: *common-valkey-env
+      SERVICE_ROLE: app
+      ENVIRONMENT: production
+      RATE_LIMIT_STORAGE_URI: redis://valkey:6379/1
+    networks:
+      - backend
+      - frontend
+    healthcheck:
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+        reservations:
+          memory: 512m
+
+  admin-cli:
+    <<: *app-common
+    container_name: journiv-sqlite-admin-cli
+    profiles: ["admin"]
+    command: ["sleep", "infinity"]
+    environment:
+      <<: *common-valkey-env
+      SERVICE_ROLE: admin-cli
+      ENVIRONMENT: production
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+        reservations:
+          memory: 256m
+
+networks:
+  backend:
+    driver: bridge
+  frontend:
+    driver: bridge
