@@ -23,6 +23,7 @@ mood_map:
 exclude_tags:
   - daylio-import
   - tldr
+  - journal
 
 # Hashtags that matched a mood entry are stripped from the entry body.
 # The mood is recorded on the entry itself, so the tag is redundant in text.
