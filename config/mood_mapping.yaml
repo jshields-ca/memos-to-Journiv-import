@@ -1,35 +1,94 @@
-# Memos hashtag → Journiv mood mapping
+# Memos hashtag → Journiv mood/activity mapping
 #
-# This config is tuned for the actual hashtag conventions in this Memos export.
-# The mood tags use a "mood-" prefix (e.g. #mood-rad, #mood-good) which maps
-# directly to Journiv's default mood names.
-#
-# Keys: hashtag name WITHOUT the # (lowercase)
+# The mood and activity names must exactly match what's in your Journiv instance.
+# The UUIDs are read from the --reference-export ZIP at runtime — they don't
+# need to be entered here.
+
+# ── USER SETTINGS ──────────────────────────────────────────────────────────────
+
+# Your server's local timezone. Used to compute the correct local date for each
+# entry (Journiv displays dates in this timezone).
+user_timezone: "America/Winnipeg"
+
+
+# ── MOOD MAP ───────────────────────────────────────────────────────────────────
+# Keys:   hashtag name from Memos (without #, lowercase)
 # Values: mood name EXACTLY as it appears in Journiv Settings → Moods
 #
-# If you've customised mood names in Journiv, update the values on the right
-# to match what's in your Journiv instance.
+# NOTE: Your Journiv instance uses "Awesome" as the top mood (not "Rad").
+# The #mood-rad tag from your Memos/Daylio data maps to "Awesome" here.
 
 mood_map:
-  mood-rad: "Rad"
+  mood-rad: "Awesome"
   mood-good: "Good"
   mood-meh: "Meh"
   mood-bad: "Bad"
   mood-awful: "Awful"
 
-# Tags that will be silently dropped — never carried over as Journiv tags.
-# "daylio-import" is a provenance marker from the original Daylio migration
-# and has no meaning in Journiv.
+
+# ── ACTIVITY MAP ───────────────────────────────────────────────────────────────
+# Maps Memos hashtags to Journiv Activities.
+# The activity MUST already exist in your Journiv instance before importing.
+#
+# Current Journiv activities (from your export):
+#   Wellness:  Steps, Sleep, Exercise
+#   Life Flow: Work, Family, Journaling
+#
+# Tags mapped to an activity are removed from the tags list (they appear
+# in mood_activity instead). Tags NOT listed here stay as plain tags.
+#
+# To add more activities: create them in Journiv first, then export a new
+# reference ZIP and add the tag → activity name mapping below.
+
+activity_map:
+  # ── Existing activities ──
+  family: "Family"
+  work: "Work"
+  sleep: "Sleep"
+  sleeping: "Sleep"
+  bedtime: "Sleep"
+
+  # ── Add these after creating the activities in Journiv ──
+  # relationships: "Relationships"
+  # parenting: "Parenting"
+  # coparenting: "Parenting"
+  # kids: "Parenting"
+  # homelab: "Homelab"
+  # linux: "Homelab"
+  # websites: "Homelab"
+  # finance: "Finance"
+  # money: "Finance"
+  # mortgage: "Finance"
+  # house: "Home"
+  # housework: "Home"
+  # repairs: "Home"
+  # renovations: "Home"
+  # yard: "Home"
+  # health: "Health"
+  # sick: "Health"
+  # travel: "Travel"
+  # hockey: "Sports"
+
+
+# ── EXCLUDED TAGS ──────────────────────────────────────────────────────────────
+# Tags silently dropped — never become Journiv tags or activities.
+
 exclude_tags:
   - daylio-import
   - tldr
   - journal
 
-# Hashtags that matched a mood entry are stripped from the entry body.
-# The mood is recorded on the entry itself, so the tag is redundant in text.
+
+# ── CONTENT CLEANING ───────────────────────────────────────────────────────────
+
+# Remove the matched mood hashtag from entry body text (recommended: true).
+# The mood is recorded on the entry itself, so it's redundant in the text.
 strip_mood_hashtags_from_content: true
 
-# Strip ALL hashtags from entry bodies (including tags that become Journiv tags).
-# Journiv shows tags separately from content, so this is a matter of preference.
-# Defaults to false — tags remain visible in the entry text.
+# Remove activity-matched hashtags from entry body text (recommended: true).
+# They become Activities on the entry, so they're redundant in the text.
+strip_activity_hashtags_from_content: true
+
+# Remove ALL hashtags from entry bodies (including ones that become tags).
+# Journiv shows tags separately, so this is a matter of preference.
 strip_all_hashtags_from_content: false

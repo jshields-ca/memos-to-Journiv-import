@@ -22,9 +22,13 @@ from pathlib import Path
 
 
 def find_journal_json(zf: zipfile.ZipFile) -> str | None:
-    """Return the name of the Journal.json file inside the ZIP (case-insensitive)."""
+    """Return the data/entry file inside the ZIP. Journiv uses data.json (beta.17+)."""
     for name in zf.namelist():
-        if name.lower().endswith("journal.json") or name.lower() == "journal.json":
+        if name.lower() in ("data.json", "journal.json"):
+            return name
+    # Fallback: any .json at root level
+    for name in zf.namelist():
+        if name.lower().endswith(".json") and "/" not in name:
             return name
     return None
 
@@ -60,9 +64,10 @@ def main():
             info = zf.getinfo(name)
             print(f"  {name}  ({info.file_size:,} bytes)")
 
+        # Journiv exports as data.json (beta.17+); older versions used Journal.json
         journal_name = find_journal_json(zf)
         if not journal_name:
-            print("\nERROR: No Journal.json found inside the ZIP.")
+            print("\nERROR: No data.json or Journal.json found inside the ZIP.")
             print("Contents:", zf.namelist())
             sys.exit(1)
 
