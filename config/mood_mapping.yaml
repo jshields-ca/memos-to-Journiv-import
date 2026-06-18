@@ -41,33 +41,38 @@ mood_map:
 # reference ZIP and add the tag → activity name mapping below.
 
 activity_map:
-  # ── Existing activities ──
-  family: "Family"
-  work: "Work"
+  # ── Wellness ──
   sleep: "Sleep"
   sleeping: "Sleep"
   bedtime: "Sleep"
+  health: "Health"
+  sick: "Health"
+  anxiety: "Health"
 
-  # ── Add these after creating the activities in Journiv ──
-  # relationships: "Relationships"
-  # parenting: "Parenting"
-  # coparenting: "Parenting"
-  # kids: "Parenting"
-  # homelab: "Homelab"
-  # linux: "Homelab"
-  # websites: "Homelab"
-  # finance: "Finance"
-  # money: "Finance"
-  # mortgage: "Finance"
-  # house: "Home"
-  # housework: "Home"
-  # repairs: "Home"
-  # renovations: "Home"
-  # yard: "Home"
-  # health: "Health"
-  # sick: "Health"
-  # travel: "Travel"
-  # hockey: "Sports"
+  # ── Life Flow ──
+  work: "Work"
+  family: "Family"
+  parenting: "Parenting"
+  coparenting: "Parenting"
+  kids: "Parenting"
+  relationships: "Relationships"
+  finance: "Finance"
+  money: "Finance"
+  mortgage: "Finance"
+  house: "Home"
+  housework: "Home"
+  repairs: "Home"
+  renovations: "Home"
+
+  # ── Exploring ──
+  travel: "Travel"
+  gardening: "Gardening"
+  yard: "Gardening"
+
+  # ── Tech & Nerdery ──
+  homelab: "Homelab"
+  linux: "Homelab"
+  websites: "Homelab"
 
 
 # ── EXCLUDED TAGS ──────────────────────────────────────────────────────────────
