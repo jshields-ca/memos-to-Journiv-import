@@ -1,0 +1,99 @@
+# Memos hashtag → Journiv mood/activity mapping
+#
+# The mood and activity names must exactly match what's in your Journiv instance.
+# The UUIDs are read from the --reference-export ZIP at runtime — they don't
+# need to be entered here.
+
+# ── USER SETTINGS ──────────────────────────────────────────────────────────────
+
+# Your server's local timezone. Used to compute the correct local date for each
+# entry (Journiv displays dates in this timezone).
+user_timezone: "America/Winnipeg"
+
+
+# ── MOOD MAP ───────────────────────────────────────────────────────────────────
+# Keys:   hashtag name from Memos (without #, lowercase)
+# Values: mood name EXACTLY as it appears in Journiv Settings → Moods
+#
+# NOTE: Your Journiv instance uses "Awesome" as the top mood (not "Rad").
+# The #mood-rad tag from your Memos/Daylio data maps to "Awesome" here.
+
+mood_map:
+  mood-rad: "Awesome"
+  mood-good: "Good"
+  mood-meh: "Meh"
+  mood-bad: "Bad"
+  mood-awful: "Awful"
+
+
+# ── ACTIVITY MAP ───────────────────────────────────────────────────────────────
+# Maps Memos hashtags to Journiv Activities.
+# The activity MUST already exist in your Journiv instance before importing.
+#
+# Current Journiv activities (from your export):
+#   Wellness:  Steps, Sleep, Exercise
+#   Life Flow: Work, Family, Journaling
+#
+# Tags mapped to an activity are removed from the tags list (they appear
+# in mood_activity instead). Tags NOT listed here stay as plain tags.
+#
+# To add more activities: create them in Journiv first, then export a new
+# reference ZIP and add the tag → activity name mapping below.
+
+activity_map:
+  # ── Wellness ──
+  sleep: "Sleep"
+  sleeping: "Sleep"
+  bedtime: "Sleep"
+  health: "Health"
+  sick: "Health"
+  anxiety: "Health"
+
+  # ── Life Flow ──
+  work: "Work"
+  family: "Family"
+  parenting: "Parenting"
+  coparenting: "Parenting"
+  kids: "Parenting"
+  relationships: "Relationships"
+  finance: "Finance"
+  money: "Finance"
+  mortgage: "Finance"
+  house: "Home"
+  housework: "Home"
+  repairs: "Home"
+  renovations: "Home"
+
+  # ── Exploring ──
+  travel: "Travel"
+  gardening: "Gardening"
+  yard: "Gardening"
+
+  # ── Tech & Nerdery ──
+  homelab: "Homelab"
+  linux: "Homelab"
+  websites: "Homelab"
+
+
+# ── EXCLUDED TAGS ──────────────────────────────────────────────────────────────
+# Tags silently dropped — never become Journiv tags or activities.
+
+exclude_tags:
+  - daylio-import
+  - tldr
+  - journal
+
+
+# ── CONTENT CLEANING ───────────────────────────────────────────────────────────
+
+# Remove the matched mood hashtag from entry body text (recommended: true).
+# The mood is recorded on the entry itself, so it's redundant in the text.
+strip_mood_hashtags_from_content: true
+
+# Remove activity-matched hashtags from entry body text (recommended: true).
+# They become Activities on the entry, so they're redundant in the text.
+strip_activity_hashtags_from_content: true
+
+# Remove ALL hashtags from entry bodies (including ones that become tags).
+# Journiv shows tags separately, so this is a matter of preference.
+strip_all_hashtags_from_content: false
